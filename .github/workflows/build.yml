@@ -17,6 +17,9 @@ jobs:
         with:
           channel: stable
 
+      - name: Generate missing Flutter platform files
+        run: flutter create --platforms=android --org com.accountantpro --project-name accountant_pro .
+
       - name: Dependencies
         run: flutter pub get
 
