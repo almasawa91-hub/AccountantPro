@@ -3,19 +3,123 @@ import 'package:provider/provider.dart';
 import '../../data/models/item_model.dart';
 import '../../logic/inventory_provider.dart';
 
-class AddEditItemDialog extends StatefulWidget{final ItemModel? item;const AddEditItemDialog({super.key,this.item});@override State<AddEditItemDialog> createState()=>_State();}
-class _State extends State<AddEditItemDialog>{
- final key=GlobalKey<FormState>();late TextEditingController name,barcode,sell,cost,qty,expiry,notes;String category='تلفونات';bool saving=false;static const cats=['تلفونات','إكسسوارات','قطع غيار','عام'];
- @override void initState(){super.initState();final x=widget.item;name=TextEditingController(text:x?.name??'');barcode=TextEditingController(text:x?.barcode??'');sell=TextEditingController(text:x==null?'':x.sellPrice.toString());cost=TextEditingController(text:x==null?'':x.costPrice.toString());qty=TextEditingController(text:x==null?'0':x.quantity.toString());expiry=TextEditingController(text:x?.expiryDate??'');notes=TextEditingController(text:x?.notes??'');if(x!=null&&cats.contains(x.category))category=x.category;}
- @override void dispose(){for(final c in[name,barcode,sell,cost,qty,expiry,notes])c.dispose();super.dispose();}
- Future<void> date()async{final p=await showDatePicker(context:context,initialDate:DateTime.tryParse(expiry.text)??DateTime.now(),firstDate:DateTime.now(),lastDate:DateTime(2100),locale:const Locale('ar','SA'));if(p!=null){expiry.text=p.year.toString().padLeft(4,'0')+'-'+p.month.toString().padLeft(2,'0')+'-'+p.day.toString().padLeft(2,'0');setState((){});}}
- Future<void> save()async{if(!key.currentState!.validate())return;final sp=double.tryParse(sell.text),cp=double.tryParse(cost.text)??0,q=int.tryParse(qty.text);if(sp==null||sp<0||cp<0||q==null||q<0)return;setState(()=>saving=true);final ok=await context.read<InventoryProvider>().saveItem(ItemModel(id:widget.item?.id,name:name.text.trim(),category:category,barcode:barcode.text.trim().isEmpty?null:barcode.text.trim(),sellPrice:sp,costPrice:cp,quantity:q,expiryDate:expiry.text.trim().isEmpty?null:expiry.text.trim(),notes:notes.text.trim().isEmpty?null:notes.text.trim()));if(!mounted)return;if(ok)Navigator.pop(context);else setState(()=>saving=false);}
- InputDecoration d(String s,IconData i)=>InputDecoration(labelText:s,prefixIcon:Icon(i),border:const OutlineInputBorder());
- @override Widget build(BuildContext c)=>Directionality(textDirection:TextDirection.rtl,child:AlertDialog(title:Text(widget.item==null?'إضافة صنف جديد':'تعديل بيانات الصنف',style:const TextStyle(fontWeight:FontWeight.bold)),content:SizedBox(width:MediaQuery.sizeOf(c).width*.9,child:SingleChildScrollView(child:Form(key:key,child:Column(mainAxisSize:MainAxisSize.min,children:[
- TextFormField(controller:name,decoration:d('اسم الصنف *',Icons.shopping_bag_outlined),validator:(v)=>v==null||v.trim().isEmpty?'مطلوب':null),const SizedBox(height:12),
- DropdownButtonFormField<String>(value:category,decoration:d('مجموعة الصنف',Icons.category_outlined),items:cats.map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),onChanged:saving?null:(x)=>setState(()=>category=x!)),const SizedBox(height:12),
- TextFormField(controller:barcode,textDirection:TextDirection.ltr,decoration:d('رمز الصنف / الباركود',Icons.qr_code_scanner)),const SizedBox(height:12),
- Row(children:[Expanded(child:TextFormField(controller:sell,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:d('سعر البيع *',Icons.payments_outlined),validator:(v)=>double.tryParse(v??'')==null?'غير صحيح':null)),const SizedBox(width:8),Expanded(child:TextFormField(controller:cost,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:d('سعر التكلفة',Icons.money_off_outlined)))]),const SizedBox(height:12),
- Row(children:[Expanded(child:TextFormField(controller:qty,keyboardType:TextInputType.number,decoration:d('الكمية الحالية',Icons.inventory_2_outlined),validator:(v)=>int.tryParse(v??'')==null?'غير صحيحة':null)),const SizedBox(width:8),Expanded(child:TextFormField(controller:expiry,readOnly:true,onTap:saving?null:date,decoration:d('تاريخ الانتهاء',Icons.calendar_today_outlined)))]),const SizedBox(height:12),
- TextFormField(controller:notes,maxLines:3,decoration:d('الملاحظات / المواصفات',Icons.notes))])))),actions:[TextButton(onPressed:saving?null:()=>Navigator.pop(c),child:const Text('إلغاء')),FilledButton(onPressed:saving?null:save,child:saving?const SizedBox(width:20,height:20,child:CircularProgressIndicator(strokeWidth:2)):const Text('موافق / حفظ'))]));
+class AddEditItemDialog extends StatefulWidget {
+  final ItemModel? item;
+  const AddEditItemDialog({super.key, this.item});
+  @override State<AddEditItemDialog> createState() => _AddEditItemDialogState();
+}
+
+class _AddEditItemDialogState extends State<AddEditItemDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _name, _category, _qty, _cost, _barcode, _notes;
+  String? _expiry;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final x = widget.item;
+    _name = TextEditingController(text: x?.name ?? '');
+    _category = TextEditingController(text: x?.category ?? '');
+    _qty = TextEditingController(text: x == null ? '0' : x.quantity.toString());
+    _cost = TextEditingController(text: x == null ? '0' : x.costPrice.toString());
+    _barcode = TextEditingController(text: x?.barcode ?? '');
+    _notes = TextEditingController(text: x?.notes ?? '');
+    _expiry = x?.expiryDate;
+  }
+
+  @override
+  void dispose() {
+    for (final c in [_name, _category, _qty, _cost, _barcode, _notes]) c.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickExpiry() async {
+    final picked = await showDatePicker(context: context, initialDate: DateTime.tryParse(_expiry ?? '') ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2100));
+    if (picked != null) {
+      setState(() => _expiry = picked.year.toString().padLeft(4, '0') + '-' + picked.month.toString().padLeft(2, '0') + '-' + picked.day.toString().padLeft(2, '0'));
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    final quantity = int.tryParse(_qty.text) ?? 0;
+    final cost = double.tryParse(_cost.text) ?? 0;
+    if (quantity < 0 || cost < 0) return;
+    setState(() => _saving = true);
+    final item = ItemModel(
+      id: widget.item?.id,
+      name: _name.text.trim(),
+      category: _category.text.trim().isEmpty ? 'عام' : _category.text.trim(),
+      barcode: _barcode.text.trim().isEmpty ? null : _barcode.text.trim(),
+      sellPrice: widget.item?.sellPrice ?? cost,
+      costPrice: cost,
+      quantity: quantity,
+      expiryDate: _expiry,
+      notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+    );
+    final ok = await context.read<InventoryProvider>().saveItem(item);
+    if (!mounted) return;
+    if (ok) Navigator.pop(context); else setState(() => _saving = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEdit = widget.item != null;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(controller: _name, textAlign: TextAlign.right, decoration: const InputDecoration(hintText: 'إسم الصنف', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12)), validator: (v) => v == null || v.trim().isEmpty ? 'أدخل اسم الصنف' : null),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10), decoration: BoxDecoration(border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(4)), child: Text(_formatDate(widget.item))),
+                  const SizedBox(width: 8),
+                  Expanded(child: TextField(controller: _category, textAlign: TextAlign.right, decoration: const InputDecoration(hintText: 'مجموعة الصنف', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12)))),
+                ]),
+                const SizedBox(height: 10),
+                TextField(controller: _barcode, textAlign: TextAlign.left, decoration: const InputDecoration(hintText: 'الباركود', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12), prefixIcon: Icon(Icons.qr_code_scanner))),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(child: TextFormField(controller: _qty, keyboardType: TextInputType.number, textAlign: TextAlign.center, decoration: const InputDecoration(hintText: 'الكمية الإفتتاحية', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10)), validator: (v) => int.tryParse(v ?? '') == null ? 'غير صحيحة' : null)),
+                  const SizedBox(width: 8),
+                  Expanded(child: TextFormField(controller: _cost, keyboardType: const TextInputType.numberWithOptions(decimal: true), textAlign: TextAlign.center, decoration: const InputDecoration(hintText: 'تكلفة الوحدة', border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10)), validator: (v) => double.tryParse(v ?? '') == null ? 'غير صحيحة' : null)),
+                ]),
+                const SizedBox(height: 10),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  GestureDetector(onTap: () {}, child: Container(width: 60, height: 60, decoration: BoxDecoration(border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(4)), child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.camera_alt, color: Colors.black54), Icon(Icons.image, size: 16, color: Colors.black38)]))),
+                  const SizedBox(width: 8),
+                  Expanded(child: Column(children: [
+                    TextField(controller: _notes, maxLines: 2, textAlign: TextAlign.right, decoration: const InputDecoration(hintText: 'ملاحظات', border: OutlineInputBorder(), contentPadding: EdgeInsets.all(8))),
+                    const SizedBox(height: 6),
+                    InkWell(onTap: _saving ? null : _pickExpiry, child: Row(children: [const Icon(Icons.calendar_today, size: 20, color: Colors.black54), const SizedBox(width: 6), Text(_expiry ?? 'تاريخ الإنتهاء', style: const TextStyle(fontSize: 13, color: Colors.black54))])),
+                  ])),
+                ]),
+                const SizedBox(height: 16),
+                Row(mainAxisAlignment: MainAxisAlignment.start, children: [
+                  ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade200, foregroundColor: Colors.black, elevation: 0), onPressed: _saving ? null : _save, child: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : Text(isEdit ? 'حفظ' : 'موافق')),
+                  const SizedBox(width: 12),
+                  ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade200, foregroundColor: Colors.black, elevation: 0), onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('إلغاء')),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(ItemModel? item) {
+    if (item?.id != null) return 'الصنف';
+    final now = DateTime.now();
+    return now.year.toString() + '-' + now.month.toString().padLeft(2, '0') + '-' + now.day.toString().padLeft(2, '0');
+  }
 }
